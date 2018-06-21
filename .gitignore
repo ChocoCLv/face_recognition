@@ -2,3 +2,6 @@
 .vscode/
 *.sh
 test.py
+*.png
+*.jpg
+exclude.list
