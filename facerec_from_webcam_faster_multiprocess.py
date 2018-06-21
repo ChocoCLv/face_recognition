@@ -17,6 +17,7 @@ config = {}
 # 识别结果的消息封装
 msg = {}
 
+nowTime = lambda:int(round(t * 1000)))
 
 # 更新人脸标准库
 def load_encode_image():
@@ -37,7 +38,10 @@ def load_encode_image():
                       image_path)
                 image = face_recognition.load_image_file(image_path)
                 try:
+                    start_time = nowTime()
                     image_encoding = face_recognition.face_encodings(image)[0]
+                    end_time = nowTime()
+                    print("encoding time: "+str(end_time - start_time))
                     known_face_encodings[dir_list[i]].append(image_encoding)
                 except:
                     print('encode error')
@@ -47,7 +51,7 @@ def load_encode_image():
 
 
 # 监听进程 用于处理客户端的连接请求
-def serverProcessFunc(push_socks1,push_socks2,push_socks3):
+def serverProcessFunc(push_socks1, push_socks2, push_socks3):
     print('[PROCESS]: server process start')
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(('127.0.0.1', config['LISTEN_PORT']))
@@ -66,7 +70,7 @@ def serverProcessFunc(push_socks1,push_socks2,push_socks3):
                 print(str_data)
                 command = str_data.split(':')
                 command_msg = command[2].split(',')
-                camera_name  = command_msg[2]
+                camera_name = command_msg[2]
                 if camera_name == 'camera1':
                     push_socks1.put(conn)
                 elif camera_name == 'camera2':
@@ -125,7 +129,7 @@ def openDoor():
 # 监听进程收到需要推送结果的连接后存入套接字队列
 # 摄像头进程检测到人脸后也会将识别结果存入消息队列
 # 该进程会不断从消息队列中取出消息 然后向每个套接字推送
-def pushProcessFunc(push_socks1,push_socks2,push_socks3,msg_queue):
+def pushProcessFunc(push_socks1, push_socks2, push_socks3, msg_queue):
     while True:
         msg = msg_queue.get(True)
         time.sleep(1)
@@ -149,11 +153,14 @@ def pushProcessFunc(push_socks1,push_socks2,push_socks3,msg_queue):
             except:
                 sock.close()
 
+
 # 识别到同一个人并且定时器未启动时即启动定时器
 # 定时器超时后会修改last_recog_id 即可以再次为同一个人开门
 timer_is_run = False
 
 # 定时器超时函数
+
+
 def timerFunc():
     global timer_is_run
     time.sleep(config['FACE_DETECT_DELAY_TIME'])
@@ -162,6 +169,8 @@ def timerFunc():
 # 人脸识别进程
 # 对应不同的摄像头
 # 目前只在启动时对人脸库进行编码  web端未作更新指令
+
+
 def run(msg_queue):
     process_this_frame = 0
     known_face_encodings = load_encode_image()
@@ -173,9 +182,10 @@ def run(msg_queue):
         password=config['CAMERA_PASSWORD'],
         ip=config['CAMERA_IP'])
     video_capture = cv2.VideoCapture(camera_url)
-    # video_capture = cv2.VideoCapture('./VID_20180525_112405.mp4')
+
     while True:
         # Grab a single frame of video
+        round_start_time = nowTime()
         ret, frame = video_capture.read()
         if not ret:
             print('未读到有效帧数据')
@@ -192,29 +202,22 @@ def run(msg_queue):
         # Only process every other frame of video to save time
         process_this_frame = (process_this_frame + 1) % 5
 
-        #显示实时画面  测试用
-        # frame = cv2.resize(frame, (1024, 768))
-        # cv2.imshow('Video', frame)
-        # cv2.waitKey(1)
-
         if process_this_frame == 0:
-            start_time = int(round(time.time() * 1000))
             # Find all the faces and face encodings in the current frame of video
+            start_time = nowTime()
             face_locations = face_recognition.face_locations(rgb_small_frame)
+            face_num = len(face_locations)
+            print('face num: '+str(face_num))
+            end_time = nowTime()
+            print('location time: '+str(end_time - start_time))
+            start_time = nowTime()
             face_encodings = face_recognition.face_encodings(
                 rgb_small_frame, face_locations)
-
-            face_num = len(face_locations)
+            end_time = nowTime()
+            print('encoding time: '+str(end_time - start_time))
+            
 
             allow_pass = False
-            # 如果未检测到人脸则处理下一帧
-            if face_num == 0:
-                continue
-            
-            if not timer_is_run:
-                timer_is_run = True
-                timer = threading.Timer(config['FACE_DETECT_DELAY_TIME'], timerFunc)
-                timer.start()
 
             msg['faceNumber'] = face_num
             msg['data'] = []
@@ -244,12 +247,6 @@ def run(msg_queue):
                         allow_pass = True
                         break
 
-            end_time = int(round(time.time() * 1000))
-
-            usage_time = end_time - start_time
-            print('[CAMERA]: ' + config['CAMERA_NAME'] + '-' + '识别到' +
-                  str(face_num) + '张人脸' + ' 耗时' + str(usage_time) + 'ms')
-
             # 控制plc开门
             file_name = ''
             if allow_pass:
@@ -257,11 +254,7 @@ def run(msg_queue):
                     end_time) + '.jpg'
                 msg['type'] = 0
                 print('[CAMERA]: ' + config['CAMERA_NAME'] + '-' + '合法')
-                # 判断是否为重复识别
-                timer_is_run = False
-                openDoor()
-                last_recog_id = face['id']
-            
+
             else:
                 file_name = 'warn_' + config['CAMERA_NAME'] + '_' + str(
                     end_time) + '.jpg'
@@ -282,6 +275,15 @@ def run(msg_queue):
             msg['ack'] = 123456
             msg_queue.put(msg)
 
+            round_end_time = nowTime()
+            print('round time: '+str(round_end_time - round_start_time))
+
+        # 显示实时画面  测试用
+        frame = cv2.resize(frame, (1024, 768))
+        cv2.imshow('Video', frame)
+        cv2.waitKey(1)
+
+
 manager = Manager()
 
 if __name__ == '__main__':
@@ -296,7 +298,8 @@ if __name__ == '__main__':
     config['LISTEN_PORT'] = cf.getint('base', 'LISTEN_PORT')
     config['SAMPLE_DIR'] = cf.get('base', 'SAMPLE_DIR')
     config['PICTURE_SAVE_DIR'] = cf.get('base', 'PICTURE_SAVE_DIR')
-    config['FACE_DETECT_DELAY_TIME'] = cf.getint('base', 'FACE_DETECT_DELAY_TIME')
+    config['FACE_DETECT_DELAY_TIME'] = cf.getint(
+        'base', 'FACE_DETECT_DELAY_TIME')
     config['PLC_TIME_OUT'] = cf.getint('base', 'PLC_TIME_OUT')
     config['FACE_DISTANCE'] = cf.getfloat('base', 'FACE_DISTANCE')
     config['PLC_CLOSE_DELAY_TIME'] = cf.getint('base', 'PLC_CLOSE_DELAY_TIME')
@@ -316,23 +319,6 @@ if __name__ == '__main__':
             print('create %s process complete' % config['CAMERA_NAME'])
             cameraProcess.start()
 
-        # 启动监听线程
-        serverProcess = Process(
-            target=serverProcessFunc, name='server', args=(push_socks1,push_socks2,push_socks3, ))
-        serverProcess.start()
-        pushProcess = Process(
-            target=pushProcessFunc,
-            name='push',
-            args=(
-                push_socks1,push_socks2,push_socks3,
-                msg_queue,
-            ))
-        pushProcess.start()
-        serverProcess.join()
-        pushProcess.join()
     except:
         print('quit')
-        while push_socks.qsize() != 0:
-            sock = push_socks.get()
-            sock.close()
         cv2.destroyAllWindows()
