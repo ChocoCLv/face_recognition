@@ -17,7 +17,7 @@ config = {}
 # 识别结果的消息封装
 msg = {}
 
-nowTime = lambda:int(round(t * 1000)))
+nowTime = lambda:int(round(time.time() * 1000))
 
 # 更新人脸标准库
 def load_encode_image():
@@ -210,76 +210,86 @@ def run(msg_queue):
             print('face num: '+str(face_num))
             end_time = nowTime()
             print('location time: '+str(end_time - start_time))
+
             start_time = nowTime()
             face_encodings = face_recognition.face_encodings(
                 rgb_small_frame, face_locations)
             end_time = nowTime()
             print('encoding time: '+str(end_time - start_time))
             
+            if face_num != 0:
+                allow_pass = False
 
-            allow_pass = False
+                msg['faceNumber'] = face_num
+                msg['data'] = []
 
-            msg['faceNumber'] = face_num
-            msg['data'] = []
+                total_min_distance = 1
+                min_id = -1
 
-            total_min_distance = 1
-            min_id = -1
+                # 判断识别图片中的人脸id
+                for face_encoding in face_encodings:
+                    # See if the face is a match for the known face(s)
+                    for face_id in known_face_encodings:
+                        distances = list(
+                            face_recognition.face_distance(
+                                known_face_encodings[face_id], face_encoding))
 
-            # 判断识别图片中的人脸id
-            for face_encoding in face_encodings:
-                # See if the face is a match for the known face(s)
-                for face_id in known_face_encodings:
-                    distances = list(
-                        face_recognition.face_distance(
-                            known_face_encodings[face_id], face_encoding))
+                        min_distance = min(distances)
+                        # 存储距离最近的人脸id 在识别失败的时候使用
+                        if total_min_distance > min_distance:
+                            total_min_distance = min_distance
+                            min_id = face_id
 
-                    min_distance = min(distances)
-                    # 存储距离最近的人脸id 在识别失败的时候使用
-                    if total_min_distance > min_distance:
-                        total_min_distance = min_distance
-                        min_id = face_id
+                        if min_distance <= config['FACE_DISTANCE']:
+                            face = {}
+                            face['id'] = face_id
+                            face['compare'] = 1 - min_distance
+                            msg['data'].append(face)
+                            allow_pass = True
+                            break
 
-                    if min_distance <= config['FACE_DISTANCE']:
-                        face = {}
-                        face['id'] = face_id
-                        face['compare'] = 1 - min_distance
-                        msg['data'].append(face)
-                        allow_pass = True
-                        break
+                # 控制plc开门
+                file_name = ''
+                if allow_pass:
+                    file_name = 'ok_' + config['CAMERA_NAME'] + '_' + str(
+                        end_time) + '.jpg'
+                    msg['type'] = 0
+                    print('[CAMERA]: ' + config['CAMERA_NAME'] + '-' + '合法')
 
-            # 控制plc开门
-            file_name = ''
-            if allow_pass:
-                file_name = 'ok_' + config['CAMERA_NAME'] + '_' + str(
-                    end_time) + '.jpg'
-                msg['type'] = 0
-                print('[CAMERA]: ' + config['CAMERA_NAME'] + '-' + '合法')
+                else:
+                    file_name = 'warn_' + config['CAMERA_NAME'] + '_' + str(
+                        end_time) + '.jpg'
+                    msg['type'] = 1
+                    face = {}
+                    face['id'] = min_id
+                    face['compare'] = 1 - total_min_distance
+                    msg['data'].append(face)
+                    print('[CAMERA]: ' + config['CAMERA_NAME'] + '-' + '非法')
 
-            else:
-                file_name = 'warn_' + config['CAMERA_NAME'] + '_' + str(
-                    end_time) + '.jpg'
-                msg['type'] = 1
-                face = {}
-                face['id'] = min_id
-                face['compare'] = 1 - total_min_distance
-                msg['data'].append(face)
-                print('[CAMERA]: ' + config['CAMERA_NAME'] + '-' + '非法')
+                # 将人脸图片保存  并将路径填入msg中
+                file_path = config['PICTURE_SAVE_DIR'] + os.path.sep + file_name
+                cv2.imwrite(file_path, frame)
+                msg['filePath'] = file_path
 
-            # 将人脸图片保存  并将路径填入msg中
-            file_path = config['PICTURE_SAVE_DIR'] + os.path.sep + file_name
-            cv2.imwrite(file_path, frame)
-            msg['filePath'] = file_path
+                # 向web端发送识别结果
+                msg['cmd'] = 130
+                msg['ack'] = 123456
+                msg_queue.put(msg)
 
-            # 向web端发送识别结果
-            msg['cmd'] = 130
-            msg['ack'] = 123456
-            msg_queue.put(msg)
+                round_end_time = nowTime()
+                print('round time: '+str(round_end_time - round_start_time))
 
-            round_end_time = nowTime()
-            print('round time: '+str(round_end_time - round_start_time))
+                for (top, right, bottom, left) in face_locations:
+                    # Scale back up face locations since the frame we detected in was scaled to 1/4 size
+                    top *= 4
+                    right *= 4
+                    bottom *= 4
+                    left *= 4
+
+                    # Draw a box around the face
+                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
 
         # 显示实时画面  测试用
-        frame = cv2.resize(frame, (1024, 768))
         cv2.imshow('Video', frame)
         cv2.waitKey(1)
 
