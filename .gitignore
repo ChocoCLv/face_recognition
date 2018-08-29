@@ -5,3 +5,4 @@ test.py
 *.png
 *.jpg
 exclude.list
+__pycache__

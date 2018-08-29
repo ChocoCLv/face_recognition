@@ -1,0 +1,1 @@
+rsync -ruv --progress ./ opuser@192.168.1.192:/home/zlei/Downloads/yc_project/face_recognition/ --exclude-from=./exclude.list --delete
